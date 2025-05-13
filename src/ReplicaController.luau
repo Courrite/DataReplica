@@ -10,7 +10,6 @@ local Remote = require(script.Parent.ReplicaShared.Remote)
 local ReplicaController = {
 	_replicasById = {}, -- Map of replicas by their unique ID
 	_replicasByTag = {}, -- Map of replicas organized by tag
-	_replicasByTemplate = {}, -- Map of replicas organized by template
 	_pendingChildren = {}, -- Children waiting for parents to be created
 	_isInitialized = false,
 	_remote = nil -- remote instance
@@ -23,7 +22,7 @@ function ReplicaController:Initialize()
 	end
 
 	-- initialize the Remote class with custom names
-	self._remote = Remote.new("ReplicaEvent")
+	self._remote = Remote.new("ReplicaEvent", "ReplicaRemotes")
 
 	-- register handlers for each action
 	self._remote:RegisterHandler("Create", function(...)
@@ -54,8 +53,8 @@ function ReplicaController:Initialize()
 	return self
 end
 
-function ReplicaController:_handleReplicaCreate(replicaId, template, tags, data, parentId)
-	local replica = ReplicaClass.new(replicaId, template, tags, data)
+function ReplicaController:_handleReplicaCreate(replicaId, tags, data, parentId)
+	local replica = ReplicaClass.new(replicaId, tags, data)
 
 	self._replicasById[replicaId] = replica
 
@@ -65,11 +64,6 @@ function ReplicaController:_handleReplicaCreate(replicaId, template, tags, data,
 		end
 		table.insert(self._replicasByTag[tag], replica)
 	end
-
-	if not self._replicasByTemplate[template] then
-		self._replicasByTemplate[template] = {}
-	end
-	table.insert(self._replicasByTemplate[template], replica)
 
 	if parentId then
 		local parent = self._replicasById[parentId]
@@ -164,16 +158,6 @@ function ReplicaController:_handleReplicaDestroy(replicaId)
 		end
 	end
 
-	local template = replica:GetTemplate()
-	if self._replicasByTemplate[template] then
-		for i, r in ipairs(self._replicasByTemplate[template]) do
-			if r:GetId() == replicaId then
-				table.remove(self._replicasByTemplate[template], i)
-				break
-			end
-		end
-	end
-
 	-- clear parent reference
 	if replica._parent then
 		local children = replica._parent._children
@@ -200,11 +184,6 @@ function ReplicaController:GetReplicasWithTag(tag)
 	return self._replicasByTag[tag] or {}
 end
 
--- Get all replicas with a specific template
-function ReplicaController:GetReplicasWithTemplate(template)
-	return self._replicasByTemplate[template] or {}
-end
-
 -- Utility functions for waiting for replicas
 function ReplicaController:WaitForReplicaWithTag(tag, timeout)
 	timeout = timeout or 10
@@ -212,21 +191,6 @@ function ReplicaController:WaitForReplicaWithTag(tag, timeout)
 
 	while os.clock() - startTime < timeout do
 		local replicas = self:GetReplicasWithTag(tag)
-		if #replicas > 0 then
-			return replicas[1]
-		end
-		task.wait(0.1)
-	end
-
-	return nil -- timed out
-end
-
-function ReplicaController:WaitForReplicaWithTemplate(template, timeout)
-	timeout = timeout or 10
-	local startTime = os.clock()
-
-	while os.clock() - startTime < timeout do
-		local replicas = self:GetReplicasWithTemplate(template)
 		if #replicas > 0 then
 			return replicas[1]
 		end
