@@ -14,7 +14,6 @@ The system allows developers to create, update, and destroy replicated data stru
 - **Tag-based Filtering**: Subscribe clients only to relevant data
 - **Hierarchical Structure**: Support for parent-child relationships between replicas
 - **Efficient Updates**: Only send changed data over the network
-- **Custom Remote Events**: Organize network traffic with named remote events
 - **Flexible Subscription**: Fine-grained control over which players receive updates
 
 ## Usage
