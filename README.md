@@ -16,7 +16,7 @@ The system allows developers to create, update, and destroy replicated data stru
 - **Efficient Updates**: Only send changed data over the network
 - **Custom Remote Events**: Organize network traffic with named remote events
 - **Flexible Subscription**: Fine-grained control over which players receive updates
-- 
+
 ## Usage
 ### Server-Side (ReplicaService)
 ```luau
@@ -27,15 +27,14 @@ ReplicaService:Initialize()
 
 -- Create a new replica
 local playerDataReplica = ReplicaService:CreateReplica(
-    "PlayerData",             -- Template name
-    {"PlayerData", "Save"},   -- Tags for filtering
-    {                         -- Initial data
+    { -- Initial data
         gold = 100,
         level = 1,
         inventory = {
             items = {}
         }
     }
+    {"PlayerData", "Save"},   -- Tags for filtering
 )
 
 -- Subscribe a player to the replica
@@ -98,7 +97,7 @@ Find specific replicas with custom predicates:
 
 ```lua
 local highLevelPlayers = ReplicaController:FindFirstReplicaWithPredicate(function(replica)
-    return replica:GetTemplate() == "Player" and replica:GetValue({"level"}) > 10
+    return replica:GetValue({"level"}) > 10
 end)
 ```
 
@@ -109,7 +108,7 @@ local ReplicaService = require(path.to.ReplicaService)
 
 -- Core methods
 ReplicaService:Initialize()
-ReplicaService:CreateReplica(template, tags, dataTable)
+ReplicaService:CreateReplica(tags, dataTable)
 ReplicaService:DestroyReplica(replica)
 
 -- Subscription methods
@@ -133,11 +132,9 @@ ReplicaController:Initialize()
 -- Query methods
 ReplicaController:GetReplicaById(replicaId)
 ReplicaController:GetReplicasWithTag(tag)
-ReplicaController:GetReplicasWithTemplate(template)
 
 -- Utility methods
 ReplicaController:WaitForReplicaWithTag(tag, timeout)
-ReplicaController:WaitForReplicaWithTemplate(template, timeout)
 ReplicaController:FindFirstReplicaWithPredicate(predicate, timeout)
 ```
 
@@ -145,7 +142,6 @@ ReplicaController:FindFirstReplicaWithPredicate(predicate, timeout)
 ```lua
 -- Get data
 replica:GetId()
-replica:GetTemplate()
 replica:GetTags()
 replica:GetData()
 replica:GetValue(path)
