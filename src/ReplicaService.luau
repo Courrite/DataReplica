@@ -49,7 +49,7 @@ function ReplicaService:Initialize()
 	ReplicaClass = require(script.Parent.Replica)
 
 	-- initialize the Remote class with custom names
-	self._remote = Remote.new("ReplicaEvent", "ReplicaRemotes")
+	self._remote = Remote.new("ReplicaEvent")
 
 	-- register remote handlers
 	-- note: we don't need handlers for client->server communication in this case
