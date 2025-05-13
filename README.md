@@ -81,8 +81,8 @@ Create hierarchical data structures:
 
 ```lua
 -- Server
-local gameReplica = ReplicaService:CreateReplica("Game", {"Game"}, gameData)
-local roundReplica = ReplicaService:CreateReplica("Round", {"Round"}, roundData)
+local gameReplica = ReplicaService:CreateReplica(gameData, {"Game"})
+local roundReplica = ReplicaService:CreateReplica(roundData, {"Round"})
 
 -- Set parent
 roundReplica:SetParent(gameReplica:GetId())
@@ -108,7 +108,7 @@ local ReplicaService = require(path.to.ReplicaService)
 
 -- Core methods
 ReplicaService:Initialize()
-ReplicaService:CreateReplica(tags, dataTable)
+ReplicaService:CreateReplica(dataTable, tags)
 ReplicaService:DestroyReplica(replica)
 
 -- Subscription methods
