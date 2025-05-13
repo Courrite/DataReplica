@@ -49,7 +49,7 @@ function ReplicaService:Initialize()
 	ReplicaClass = require(script.Parent.Replica)
 
 	-- initialize the Remote class with custom names
-	self._remote = Remote.new("ReplicaEvent")
+	self._remote = Remote.new("ReplicaEvent", "ReplicaRemotes")
 
 	-- register remote handlers
 	-- note: we don't need handlers for client->server communication in this case
@@ -63,16 +63,15 @@ function ReplicaService:Initialize()
 	return self
 end
 
-function ReplicaService:CreateReplica(template, tags, dataTable)
-	-- creates a new replica with specified template, tags and data
+function ReplicaService:CreateReplica(dataTable, tags)
+	-- creates a new replica with specified tags and data
 	assert(self._isInitialized, "ReplicaService must be initialized before creating replicas")
-	assert(typeof(template) == "string", "Replica template must be a string")
 	assert(typeof(tags) == "table", "Replica tags must be a table")
 	assert(typeof(dataTable) == "table", "Replica data must be a table")
 
 	local replicaId = createReplicaId()
 	local replicaToken = ReplicaToken.new(replicaId)
-	local replica = ReplicaClass.new(replicaId, template, tags, dataTable, replicaToken)
+	local replica = ReplicaClass.new(replicaId, tags, dataTable, replicaToken)
 
 	self._replicasById[replicaId] = replica
 
@@ -113,7 +112,7 @@ function ReplicaService:SubscribePlayer(player, replica)
 	self._playerSubscriptions[player][replicaId] = true
 
 	-- Send replica creation to client using the Remote class
-	self._remote:FireClient(player, "Create", replicaId, replica:GetTemplate(), 
+	self._remote:FireClient(player, "Create", replicaId, 
 		replica:GetTags(), replica:GetData(), replica:GetParentId())
 end
 
