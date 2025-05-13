@@ -7,10 +7,9 @@ local ReplicaService
 local Replica = {}
 Replica.__index = Replica
 
-function Replica.new(id: string, template: string, tags: {string}, dataTable: {[string]: any}, token: any?)
+function Replica.new(id: string, tags: {string}, dataTable: {[string]: any}, token: any?)
 	-- creates a new replica instance with specified properties
 	assert(typeof(id) == "string", "Replica ID must be a string")
-	assert(typeof(template) == "string", "Replica template must be a string")
 	assert(typeof(tags) == "table", "Replica tags must be a table")
 	assert(typeof(dataTable) == "table", "Replica data must be a table")
 
@@ -21,7 +20,6 @@ function Replica.new(id: string, template: string, tags: {string}, dataTable: {[
 	local self = setmetatable({}, Replica)
 
 	self._id = id
-	self._template = template
 	self._tags = tags
 	self._data = dataTable
 	self._children = {}
@@ -47,11 +45,6 @@ end
 function Replica:GetId()
 	-- returns the replica's unique id
 	return self._id
-end
-
-function Replica:GetTemplate()
-	-- returns the replica's template name
-	return self._template
 end
 
 function Replica:GetTags()
