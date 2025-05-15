@@ -69,6 +69,7 @@ export type ReplicaService = {
 	SubscribePlayerToTags: (self: ReplicaService, player: Player, tags: {string}) -> (),
 	GetSubscribedPlayers: (self: ReplicaService, replicaId: string) -> {Player},
 	DestroyReplica: (self: ReplicaService, replica: any) -> (),
+
 	_replicaUpdateHandler: (self: ReplicaService, token: ReplicaToken, actionType: string, path: string, ...any) -> ()
 }
 
