@@ -6,7 +6,71 @@ local CollectionService = game:GetService("CollectionService")
 assert(RunService:IsServer(), "ReplicaService can only be required by the server")
 
 local ReplicaClass
-local Remote = require(script.Parent.Remote)
+local Remote = require(script.Parent.ReplicaShared.Remote)
+
+export type ReplicaToken = {
+	_replicaId: string,
+	GetReplicaId: (self: ReplicaToken) -> string
+}
+
+export type Config = {
+	Tags: {any},
+	Data: any | {any}
+}
+
+export type Replica = {
+	_id: string,
+	_tags: {string},
+	_data: {[string]: any},
+	_children: {Replica},
+	_parent: Replica?,
+	_parentId: string?,
+	_token: any?,
+	_signals: {[string]: {(any) -> ()}}?,
+	_listeners: {[string]: {(...any) -> ()}}?,
+
+	GetId: (self: Replica) -> string,
+	GetTags: (self: Replica) -> {string},
+	GetData: (self: Replica) -> {[string]: any},
+	GetParent: (self: Replica) -> Replica?,
+	GetParentId: (self: Replica) -> string?,
+	GetChildren: (self: Replica) -> {Replica},
+
+	-- Server-side methods
+	SetValue: (self: Replica, path: string, value: any) -> any,
+	ArrayInsert: (self: Replica, arrayPath: string, index: number?, value: any) -> number,
+	ArrayRemove: (self: Replica, arrayPath: string, index: number) -> any,
+	SetParent: (self: Replica, parentReplica: Replica?) -> (),
+	Destroy: (self: Replica) -> (),
+
+	-- Client-side methods
+	--ConnectOnChange: ((self: Replica, path: string, callback: (any) -> ()) -> {Disconnect: () -> ()})?,
+	--AddGlobalListener: ((self: Replica, listenerType: string, callback: (...any) -> ()) -> {Disconnect: () -> ()})?,
+	--_handleDataUpdate: ((self: Replica, path: string, value: any) -> ())?,
+	--_handleArrayInsert: ((self: Replica, path: string, index: number, value: any) -> ())?,
+	--_handleArrayRemove: ((self: Replica, path: string, index: number) -> ())?,
+	--_handleSetParent: ((self: Replica, parentId: string?) -> ())?,
+}
+
+export type ReplicaService = {
+	_replicasByTag: {[string]: Replica},
+	_replicasById: {[string]: Replica},
+	_nextReplicaId: number,
+	_playerSubscriptions: {[any]: {[string]: boolean}},
+	_isInitialized: boolean,
+	_remote: any,
+
+	Initialize: (self: ReplicaService) -> ReplicaService,
+	CreateReplica: (self: ReplicaService, Config: Config) -> Replica,
+	GetReplicasWithTags: (self: ReplicaService, tag: {string}) -> {Replica},
+	GetReplicaById: (self: ReplicaService, replicaId: string) -> Replica?,
+	SubscribePlayer: (self: ReplicaService, player: Player, replica: Replica) -> (),
+	UnsubscribePlayer: (self: ReplicaService, player: Player, replica: Replica) -> (),
+	SubscribePlayerToTags: (self: ReplicaService, player: Player, tags: {string}) -> (),
+	GetSubscribedPlayers: (self: ReplicaService, replicaId: string) -> {Player},
+	DestroyReplica: (self: ReplicaService, replica: any) -> (),
+	_replicaUpdateHandler: (self: ReplicaService, token: ReplicaToken, actionType: string, path: string, ...any) -> ()
+}
 
 local ReplicaService = {
 	_replicasByTag = {}, -- map of replicas organized by tag
@@ -15,45 +79,41 @@ local ReplicaService = {
 	_playerSubscriptions = {}, -- map of player subscriptions by player and replica
 	_isInitialized = false, -- initialization state
 	_remote = nil -- remote instance
-}
+} :: ReplicaService
 
 -- authentication token for server-side write operations
 local ReplicaToken = {}
 ReplicaToken.__index = ReplicaToken
 
-function ReplicaToken.new(replicaId)
+function ReplicaToken.new(replicaId: string): ReplicaToken
 	-- creates a new token with replica id
 	local self = setmetatable({}, ReplicaToken)
 	self._replicaId = replicaId
 	return self
 end
 
-function ReplicaToken:GetReplicaId()
+function ReplicaToken:GetReplicaId(): string
 	-- returns the replica id associated with this token
 	return self._replicaId
 end
 
-local function createReplicaId()
+local function createReplicaId(): string
 	-- creates a unique replica id
 	ReplicaService._nextReplicaId += 1
 	return tostring(ReplicaService._nextReplicaId)
 end
 
-function ReplicaService:Initialize()
+function ReplicaService:Initialize(): ReplicaService
 	-- initializes the service
 	if self._isInitialized then
 		warn("ReplicaService has already been initialized")
 		return self
 	end
 
-	ReplicaClass = require(script.Parent.Replica)
+	ReplicaClass = require(script.Parent.ReplicaShared.Replica)
 
 	-- initialize the Remote class with custom names
-	self._remote = Remote.new("ReplicaEvent", "ReplicaRemotes")
-
-	-- register remote handlers
-	-- note: we don't need handlers for client->server communication in this case
-	-- as all operations are initiated by the server in this architecture
+	self._remote = Remote.new("ReplicaEvent")
 
 	Players.PlayerRemoving:Connect(function(player)
 		self._playerSubscriptions[player] = nil
@@ -63,19 +123,18 @@ function ReplicaService:Initialize()
 	return self
 end
 
-function ReplicaService:CreateReplica(dataTable, tags)
+function ReplicaService:CreateReplica(Config: Config): Replica
 	-- creates a new replica with specified tags and data
 	assert(self._isInitialized, "ReplicaService must be initialized before creating replicas")
-	assert(typeof(tags) == "table", "Replica tags must be a table")
-	assert(typeof(dataTable) == "table", "Replica data must be a table")
+	assert(typeof(Config) == "table", "Replica Config must be a table")
 
 	local replicaId = createReplicaId()
 	local replicaToken = ReplicaToken.new(replicaId)
-	local replica = ReplicaClass.new(replicaId, tags, dataTable, replicaToken)
+	local replica = ReplicaClass.new(replicaId, Config.Tags, Config.Data, replicaToken)
 
 	self._replicasById[replicaId] = replica
 
-	for _, tag in ipairs(tags) do
+	for _, tag in ipairs(Config.Tags) do
 		if not self._replicasByTag[tag] then
 			self._replicasByTag[tag] = {}
 		end
@@ -85,17 +144,48 @@ function ReplicaService:CreateReplica(dataTable, tags)
 	return replica
 end
 
-function ReplicaService:GetReplicasWithTag(tag)
-	-- returns all replicas with the specified tag
-	return self._replicasByTag[tag] or {}
+function ReplicaService:GetReplicasWithTags(tags: {string}): {Replica}
+	if #tags == 0 then
+		return {}
+	end
+
+	-- start with all replicas that have the first tag
+	local firstTag = tags[1]
+	local filteredReplicas = self._replicasByTag[firstTag] or {}
+	local result = {}
+
+	-- if only one tag was provided, return those replicas
+	if #tags == 1 then
+		return filteredReplicas
+	end
+
+	-- otherwise, filter for replicas that have ALL the requested tags
+	for _, replica in pairs(filteredReplicas) do
+		local hasAllTags = true
+
+		-- check if replica has all the remaining tags
+		for i = 2, #tags do
+			local tag = tags[i]
+			if not replica:HasTag(tag) then
+				hasAllTags = false
+				break
+			end
+		end
+
+		if hasAllTags then
+			table.insert(result, replica)
+		end
+	end
+
+	return result
 end
 
-function ReplicaService:GetReplicaById(replicaId)
+function ReplicaService:GetReplicaById(replicaId: string): Replica?
 	-- returns replica with the specified id or nil if not found
 	return self._replicasById[replicaId]
 end
 
-function ReplicaService:SubscribePlayer(player, replica)
+function ReplicaService:SubscribePlayer(player: Player, replica: Replica)
 	-- subscribes player to replica updates
 	assert(typeof(player) == "Instance" and player:IsA("Player"), "Invalid player")
 
@@ -116,7 +206,7 @@ function ReplicaService:SubscribePlayer(player, replica)
 		replica:GetTags(), replica:GetData(), replica:GetParentId())
 end
 
-function ReplicaService:UnsubscribePlayer(player, replica)
+function ReplicaService:UnsubscribePlayer(player: Player, replica: Replica)
 	-- unsubscribes player from replica updates
 	if not self._playerSubscriptions[player] then return end
 
@@ -127,7 +217,7 @@ function ReplicaService:UnsubscribePlayer(player, replica)
 	self._remote:FireClient(player, "Destroy", replicaId)
 end
 
-function ReplicaService:SubscribePlayerToTags(player, tags)
+function ReplicaService:SubscribePlayerToTags(player: Player, tags: {string})
 	-- subscribes player to all replicas with specified tags
 	for _, tag in ipairs(tags) do
 		local replicas = self:GetReplicasWithTag(tag)
@@ -137,7 +227,7 @@ function ReplicaService:SubscribePlayerToTags(player, tags)
 	end
 end
 
-function ReplicaService:GetSubscribedPlayers(replicaId)
+function ReplicaService:GetSubscribedPlayers(replicaId: string): {Player}
 	-- returns all players subscribed to the specified replica
 	local subscribedPlayers = {}
 
