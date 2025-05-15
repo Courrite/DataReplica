@@ -69,7 +69,7 @@ local ReplicaController = {
 	_pendingChildren = {}, -- Children waiting for parents to be created
 	_isInitialized = false,
 	_remote = nil -- remote instance
-}
+} :: ReplicaController
 
 function ReplicaController:Initialize()
 	if self._isInitialized then
