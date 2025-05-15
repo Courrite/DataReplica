@@ -87,7 +87,7 @@ local roundReplica = ReplicaService:CreateReplica(roundData, {"Round"})
 roundReplica:SetParent(gameReplica:GetId())
 
 -- Client
-local gameReplica = ReplicaController:WaitForReplicaWithTag("Game")
+local gameReplica = ReplicaController:WaitForReplicaWithTags({"Game"})
 local childReplicas = gameReplica:GetChildren()
 ```
 
