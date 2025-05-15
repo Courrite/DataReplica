@@ -7,6 +7,62 @@ assert(RunService:IsClient(), "ReplicaController can only be required by the cli
 local ReplicaClass = require(script.Parent.ReplicaShared.Replica)
 local Remote = require(script.Parent.ReplicaShared.Remote)
 
+export type Replica = {
+	_id: string,
+	_tags: {string},
+	_data: {[string]: any},
+	_children: {Replica},
+	_parent: Replica?,
+	_parentId: string?,
+	_token: any?,
+	_signals: {[string]: {(any) -> ()}}?,
+	_listeners: {[string]: {(...any) -> ()}}?,
+
+	GetId: (self: Replica) -> string,
+	GetTags: (self: Replica) -> {string},
+	GetData: (self: Replica) -> {[string]: any},
+	GetParent: (self: Replica) -> Replica?,
+	GetParentId: (self: Replica) -> string?,
+	GetChildren: (self: Replica) -> {Replica},
+
+	-- Server-side methods
+	--SetValue: (self: Replica, path: string, value: any) -> any,
+	--ArrayInsert: (self: Replica, arrayPath: string, index: number?, value: any) -> number,
+	--ArrayRemove: (self: Replica, arrayPath: string, index: number) -> any,
+	--SetParent: (self: Replica, parentReplica: Replica?) -> (),
+	--Destroy: (self: Replica) -> (),
+
+	-- Client-side methods
+	ConnectOnChange: (self: Replica, path: string, callback: (any) -> ()) -> {Disconnect: () -> ()},
+	AddGlobalListener: (self: Replica, listenerType: string, callback: (...any) -> ()) -> {Disconnect: () -> ()},
+	_handleDataUpdate: (self: Replica, path: string, value: any) -> (),
+	_handleArrayInsert: (self: Replica, path: string, index: number, value: any) -> (),
+	_handleArrayRemove: (self: Replica, path: string, index: number) -> (),
+	_handleSetParent: (self: Replica, parentId: string?) -> (),
+}
+
+export type ReplicaController = {
+	_replicasById: {[string]: Replica},
+	_replicasByTag: {[string]: {Replica}},
+	_pendingChildren: {[string]: {Replica}},
+	_isInitialized: boolean,
+	_remote: any,
+
+	Initialize: (self: ReplicaController) -> ReplicaController,
+
+	GetReplicaById: (self: ReplicaController, replicaId: string) -> Replica?,
+	GetReplicasWithTag: (self: ReplicaController, tag: string) -> {Replica},
+	WaitForReplicaWithTag: (self: ReplicaController, tag: string, timeout: number?) -> Replica?,
+	FindFirstReplicaWithPredicate: (self: ReplicaController, predicate: (replica: Replica) -> boolean, timeout: number?) -> Replica?,
+	
+	_handleReplicaCreate: (self: ReplicaController, replicaId: string, tags: {string}, data: {[string]: any}, parentId: string?) -> (),
+	_handleReplicaUpdate: (self: ReplicaController, replicaId: string, path: string, value: any) -> (),
+	_handleReplicaArrayInsert: (self: ReplicaController, replicaId: string, path: string, index: number, value: any) -> (),
+	_handleReplicaArrayRemove: (self: ReplicaController, replicaId: string, path: string, index: number) -> (),
+	_handleReplicaSetParent: (self: ReplicaController, replicaId: string, parentId: string?) -> (),
+	_handleReplicaDestroy: (self: ReplicaController, replicaId: string) -> (),
+}
+
 local ReplicaController = {
 	_replicasById = {}, -- Map of replicas by their unique ID
 	_replicasByTag = {}, -- Map of replicas organized by tag
