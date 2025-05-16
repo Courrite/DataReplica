@@ -21,7 +21,7 @@ export type Config = {
 export type Replica = {
 	_id: string,
 	_tags: {string},
-	_data: {[string]: any},
+	Data: {[string]: any},
 	_children: {Replica},
 	_parent: Replica?,
 	_parentId: string?,
@@ -31,7 +31,6 @@ export type Replica = {
 
 	GetId: (self: Replica) -> string,
 	GetTags: (self: Replica) -> {string},
-	GetData: (self: Replica) -> {[string]: any},
 	GetParent: (self: Replica) -> Replica?,
 	GetParentId: (self: Replica) -> string?,
 	GetChildren: (self: Replica) -> {Replica},
@@ -69,7 +68,6 @@ export type ReplicaService = {
 	SubscribePlayerToTags: (self: ReplicaService, player: Player, tags: {string}) -> (),
 	GetSubscribedPlayers: (self: ReplicaService, replicaId: string) -> {Player},
 	DestroyReplica: (self: ReplicaService, replica: any) -> (),
-
 	_replicaUpdateHandler: (self: ReplicaService, token: ReplicaToken, actionType: string, path: string, ...any) -> ()
 }
 
@@ -204,7 +202,7 @@ function ReplicaService:SubscribePlayer(player: Player, replica: Replica)
 
 	-- Send replica creation to client using the Remote class
 	self._remote:FireClient(player, "Create", replicaId, 
-		replica:GetTags(), replica:GetData(), replica:GetParentId())
+		replica:GetTags(), replica.Data, replica:GetParentId())
 end
 
 function ReplicaService:UnsubscribePlayer(player: Player, replica: Replica)
@@ -232,7 +230,7 @@ function ReplicaService:GetSubscribedPlayers(replicaId: string): {Player}
 	-- returns all players subscribed to the specified replica
 	local subscribedPlayers = {}
 
-	for player, subscriptions in pairs(self._playerSubscriptions) do
+	for player, subscriptions in self._playerSubscriptions do
 		if subscriptions[replicaId] then
 			table.insert(subscribedPlayers, player)
 		end
@@ -250,7 +248,7 @@ function ReplicaService:DestroyReplica(replica)
 		self._remote:FireClients(subscribedPlayers, "Destroy", replicaId)
 	end
 
-	for tag, replicas in pairs(self._replicasByTag) do
+	for tag, replicas in self._replicasByTag do
 		for i, r in ipairs(replicas) do
 			if r:GetId() == replicaId then
 				table.remove(replicas, i)
@@ -261,7 +259,7 @@ function ReplicaService:DestroyReplica(replica)
 
 	self._replicasById[replicaId] = nil
 
-	for player, subscriptions in pairs(self._playerSubscriptions) do
+	for player, subscriptions in self._playerSubscriptions do
 		subscriptions[replicaId] = nil
 	end
 end
