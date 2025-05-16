@@ -10,7 +10,7 @@ local Remote = require(script.Parent.ReplicaShared.Remote)
 export type Replica = {
 	_id: string,
 	_tags: {string},
-	_data: {[string]: any},
+	Data: {[string]: any},
 	_children: {Replica},
 	_parent: Replica?,
 	_parentId: string?,
@@ -20,7 +20,6 @@ export type Replica = {
 
 	GetId: (self: Replica) -> string,
 	GetTags: (self: Replica) -> {string},
-	GetData: (self: Replica) -> {[string]: any},
 	GetParent: (self: Replica) -> Replica?,
 	GetParentId: (self: Replica) -> string?,
 	GetChildren: (self: Replica) -> {Replica},
@@ -263,7 +262,7 @@ function ReplicaController:FindFirstReplicaWithPredicate(predicate, timeout)
 	local startTime = os.clock()
 
 	while os.clock() - startTime < timeout do
-		for _, replica in pairs(self._replicasById) do
+		for _, replica in self._replicasById do
 			if predicate(replica) then
 				return replica
 			end
