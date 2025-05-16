@@ -142,7 +142,6 @@ ReplicaController:FindFirstReplicaWithPredicate(predicate, timeout)
 -- Get data
 replica:GetId()
 replica:GetTags()
-replica:GetData()
 replica:GetValue(path)
 replica:GetParent()
 replica:GetChildren()
