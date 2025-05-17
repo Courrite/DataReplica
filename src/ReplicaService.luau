@@ -159,7 +159,7 @@ function ReplicaService:GetReplicasWithTags(tags: {string}): {Replica}
 	end
 
 	-- otherwise, filter for replicas that have ALL the requested tags
-	for _, replica in pairs(filteredReplicas) do
+	for _, replica in filteredReplicas do
 		local hasAllTags = true
 
 		-- check if replica has all the remaining tags
