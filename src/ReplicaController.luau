@@ -1,282 +1,308 @@
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-assert(RunService:IsClient(), "ReplicaController can only be required by the client")
+local isServer = RunService:IsServer()
 
-local ReplicaClass = require(script.Parent.ReplicaShared.Replica)
-local Remote = require(script.Parent.ReplicaShared.Remote)
-local Signal = require(script.Parent.ReplicaShared.Signal)
+local ReplicaService
+local Signal = require(script.Parent.Signal)
 
-export type Replica = {
-	_id: string,
-	_tags: {string},
-	Data: {[string]: any},
-	_children: {Replica},
-	_parent: Replica?,
-	_parentId: string?,
-	_token: any?,
-	_signals: {[string]: {(any) -> ()}}?,
-	_listeners: {[string]: {(...any) -> ()}}?,
+local Replica = {}
+Replica.__index = Replica
 
-	GetId: (self: Replica) -> string,
-	GetTags: (self: Replica) -> {string},
-	GetParent: (self: Replica) -> Replica?,
-	GetParentId: (self: Replica) -> string?,
-	GetChildren: (self: Replica) -> {Replica},
+function Replica.new(id: string, tags: {string}, dataTable: {[string]: any}, token: any?)
+	-- creates a new replica instance with specified properties
+	assert(typeof(id) == "string", "Replica ID must be a string")
+	assert(typeof(tags) == "table", "Replica tags must be a table")
+	assert(typeof(dataTable) == "table", "Replica data must be a table")
 
-	-- Client-side methods
-	ConnectOnChange: (self: Replica, path: string, callback: (any) -> ()) -> {Disconnect: () -> ()},
-	AddGlobalListener: (self: Replica, listenerType: string, callback: (...any) -> ()) -> {Disconnect: () -> ()},
-	_handleDataUpdate: (self: Replica, path: string, value: any) -> (),
-	_handleArrayInsert: (self: Replica, path: string, index: number, value: any) -> (),
-	_handleArrayRemove: (self: Replica, path: string, index: number) -> (),
-	_handleSetParent: (self: Replica, parentId: string?) -> (),
-}
-
-local ReplicaController = {
-	_replicasById = {}, -- Map of replicas by their unique ID
-	_replicasByTag = {}, -- Map of replicas organized by tag
-	_pendingChildren = {}, -- Children waiting for parents to be created
-	_isInitialized = false,
-	_remote = nil, -- remote instance
-	ReplicaCreated = Signal.new(), -- fired when a replica is created
-	ReplicaDestroyed = Signal.new() -- fired when a replica is destroyed (token, replicaId)
-} :: typeof(setmetatable(ReplicaController, setmetatable({__index = ReplicaController})))
-
-function ReplicaController:Initialize()
-	if self._isInitialized then
-		warn("ReplicaController has already been initialized")
-		return self
+	if isServer then
+		assert(token ~= nil, "Replica token is required on server")
 	end
 
-	-- initialize the Remote class with custom names
-	self._remote = Remote.new("ReplicaEvent", "ReplicaRemotes")
+	local self = setmetatable({}, Replica)
 
-	-- register handlers for each action
-	self._remote:RegisterHandler("Create", function(...)
-		self:_handleReplicaCreate(...)
-	end)
+	self._id = id
+	self._tags = tags
+	self.Data = dataTable
+	self._children = {}
+	self._parent = nil
+	self._parentId = nil
+	
+	self.Changed = Signal.new() -- path, replica
+	self.Destroyed = Signal.new() -- token, replicaId
 
-	self._remote:RegisterHandler("Update", function(...)
-		self:_handleReplicaUpdate(...)
-	end)
+	if isServer then
+		self._token = token
 
-	self._remote:RegisterHandler("ArrayInsert", function(...)
-		self:_handleReplicaArrayInsert(...)
-	end)
+		if not ReplicaService then
+			ReplicaService = require(script.Parent.Parent.ReplicaService)
+		end
+	end
 
-	self._remote:RegisterHandler("ArrayRemove", function(...)
-		self:_handleReplicaArrayRemove(...)
-	end)
+	if not isServer then
+		self._signals = {}
+		self._listeners = {}
+	end
 
-	self._remote:RegisterHandler("SetParent", function(...)
-		self:_handleReplicaSetParent(...)
-	end)
-
-	self._remote:RegisterHandler("Destroy", function(...)
-		self:_handleReplicaDestroy(...)
-	end)
-
-	self._isInitialized = true
 	return self
 end
 
-function ReplicaController:_handleReplicaCreate(replicaId, tags, data, parentId)
-	local replica = ReplicaClass.new(replicaId, tags, data)
+function Replica:GetId()
+	-- returns the replica's unique id
+	return self._id
+end
 
-	self._replicasById[replicaId] = replica
+function Replica:GetTags()
+	-- returns the replica's tags
+	return self._tags
+end
 
-	for _, tag in ipairs(tags) do
-		if not self._replicasByTag[tag] then
-			self._replicasByTag[tag] = {}
-		end
-		table.insert(self._replicasByTag[tag], replica)
-	end
+function Replica:GetParent()
+	-- returns the replica's parent replica
+	return self._parent
+end
 
-	if parentId then
-		local parent = self._replicasById[parentId]
-		if parent then
-			replica._parentId = parentId
-			replica._parent = parent
-			table.insert(parent._children, replica)
+function Replica:GetParentId()
+	-- returns the replica's parent id
+	return self._parentId
+end
+
+function Replica:GetChildren()
+	-- returns the replica's children
+	return self._children
+end
+
+local function deepCopy(original)
+	-- creates a deep copy of a table
+	local copy = {}
+	for k, v in original do
+		if type(v) == "table" then
+			copy[k] = deepCopy(v)
 		else
-			if not self._pendingChildren[parentId] then
-				self._pendingChildren[parentId] = {}
+			copy[k] = v
+		end
+	end
+	return copy
+end
+
+local function getValueAtPath(tbl, path)
+	-- gets a value at specified path in a table
+	local current = tbl
+	local pathParts = string.split(path, ".")
+
+	for i, key in ipairs(pathParts) do
+		if i < #pathParts then
+			if typeof(current) ~= "table" then
+				return nil
 			end
-			table.insert(self._pendingChildren[parentId], replica)
+			current = current[key]
+		else
+			return current[key]
 		end
 	end
 
-	if self._pendingChildren[replicaId] then
-		for _, child in ipairs(self._pendingChildren[replicaId]) do
-			child._parentId = replicaId
-			child._parent = replica
-			table.insert(replica._children, child)
+	return nil
+end
+
+local function setValueAtPath(tbl, path, value)
+	-- sets a value at specified path in a table
+	local current = tbl
+	local pathParts = string.split(path, ".")
+
+	for i, key in ipairs(pathParts) do
+		if tonumber(key) then
+			key = tonumber(key)
 		end
-		self._pendingChildren[replicaId] = nil
+
+		if i < #pathParts then
+			if current[key] == nil or typeof(current[key]) ~= "table" then
+				current[key] = {}
+			end
+			current = current[key]
+		else
+			current[key] = value
+		end
 	end
 
-	-- fire creation signal
-	self.ReplicaCreated:Fire(replica)
+	return value
 end
 
-function ReplicaController:_handleReplicaUpdate(replicaId, path, value)
-	local replica = self._replicasById[replicaId]
-	if replica then
-		replica:_handleDataUpdate(path, value)
+if isServer then
+	function Replica:SetValue(path, value)
+		-- sets a value at specified path and replicates to clients
+		assert(self._token, "Replica token required for write operations")
+
+		setValueAtPath(self.Data, path, value)
+
+		ReplicaService:_replicaUpdateHandler(self._token, "update", path, value)
+
+		return value
 	end
-end
 
-function ReplicaController:_handleReplicaArrayInsert(replicaId, path, index, value)
-	local replica = self._replicasById[replicaId]
-	if replica then
-		replica:_handleArrayInsert(path, index, value)
+	function Replica:ArrayInsert(arrayPath, index, value)
+		-- inserts a value into an array at specified path and replicates to clients
+		assert(self._token, "Replica token required for write operations")
+
+		local array = getValueAtPath(self.Data, arrayPath)
+		assert(typeof(array) == "table", "Path does not point to a table: " .. arrayPath)
+
+		if index then
+			table.insert(array, index, value)
+		else
+			table.insert(array, value)
+			index = #array
+		end
+
+		ReplicaService:_replicaUpdateHandler(self._token, "arrayInsert", arrayPath, index, value)
+
+		return index
 	end
-end
 
-function ReplicaController:_handleReplicaArrayRemove(replicaId, path, index)
-	local replica = self._replicasById[replicaId]
-	if replica then
-		replica:_handleArrayRemove(path, index)
+	function Replica:ArrayRemove(arrayPath, index)
+		-- removes a value from an array at specified path and replicates to clients
+		assert(self._token, "Replica token required for write operations")
+
+		local array = getValueAtPath(self.Data, arrayPath)
+		assert(typeof(array) == "table", "Path does not point to a table: " .. arrayPath)
+
+		local value = array[index]
+
+		table.remove(array, index)
+
+		ReplicaService:_replicaUpdateHandler(self._token, "arrayRemove", arrayPath, index)
+
+		return value
 	end
-end
 
-function ReplicaController:_handleReplicaSetParent(replicaId, parentId)
-	local replica = self._replicasById[replicaId]
-	if replica then
-		-- remove from previous parent
-		if replica._parent then
-			local children = replica._parent._children
-			for i, child in ipairs(children) do
-				if child == replica then
-					table.remove(children, i)
+	function Replica:SetParent(parentReplica)
+		-- sets the parent of this replica and replicates to clients
+		assert(self._token, "Replica token required for write operations")
+
+		if self._parent then
+			local oldParent = self._parent
+			for i, child in ipairs(oldParent._children) do
+				if child == self then
+					table.remove(oldParent._children, i)
 					break
 				end
 			end
 		end
 
-		-- assign new parent
-		if parentId then
-			local parent = self._replicasById[parentId]
-			if parent then
-				replica._parent = parent
-				table.insert(parent._children, replica)
-			else
-				replica._parent = nil
-				if not self._pendingChildren[parentId] then
-					self._pendingChildren[parentId] = {}
+		self._parent = parentReplica
+		self._parentId = parentReplica and parentReplica:GetId() or nil
+
+		if parentReplica then
+			table.insert(parentReplica._children, self)
+		end
+
+		ReplicaService:_replicaUpdateHandler(self._token, "setParent", "", self._parentId)
+	end
+
+	function Replica:Destroy()
+		-- destroys this replica and its children
+		assert(self._token, "Replica token required for write operations")
+
+		if self._parent then
+			self:SetParent(nil)
+		end
+
+		for _, child in ipairs(self._children) do
+			child:Destroy()
+		end
+
+		ReplicaService:DestroyReplica(self)
+	end
+end
+
+if not isServer then
+	function Replica:_handleDataUpdate(path, value)
+		-- handles data update from server
+		setValueAtPath(self.Data, path, value)
+
+		local parts = string.split(path, ".")
+		local currentPath = ""
+
+		for i, part in ipairs(parts) do
+			if i > 1 then
+				currentPath = currentPath .. "."
+			end
+			currentPath = currentPath .. part
+
+			if self._signals[currentPath] then
+				for _, callback in ipairs(self._signals[currentPath]) do
+					task.spawn(callback, getValueAtPath(self.Data, currentPath))
 				end
-				table.insert(self._pendingChildren[parentId], replica)
-			end
-		else
-			replica._parent = nil
-		end
-
-		replica:_handleSetParent(parentId)
-	end
-end
-
-function ReplicaController:_handleReplicaDestroy(replicaId)
-	local replica = self._replicasById[replicaId]
-	if not replica then return end
-
-	-- remove reference
-	self._replicasById[replicaId] = nil
-
-	-- remove from tag lists
-	for tag, replicas in self._replicasByTag do
-		for i, r in ipairs(replicas) do
-			if r:GetId() == replicaId then
-				table.remove(replicas, i)
-				break
 			end
 		end
+
+		if self._listeners["update"] then
+			for _, callback in ipairs(self._listeners["update"]) do
+				task.spawn(callback, path, value)
+			end
+		end
+		
+
+		self.Changed:Fire(path, self)
 	end
 
-	-- clear parent reference
-	if replica._parent then
-		local children = replica._parent._children
-		for i, child in ipairs(children) do
-			if child == replica then
-				table.remove(children, i)
-				break
+	function Replica:_handleArrayInsert(path, index, value)
+		-- handles array insert from server
+		local array = getValueAtPath(self.Data, path)
+
+		if typeof(array) ~= "table" then
+			array = {}
+			setValueAtPath(self.Data, path, array)
+		end
+
+		table.insert(array, index, value)
+
+		if self._signals[path] then
+			for _, callback in ipairs(self._signals[path]) do
+				task.spawn(callback, array)
+			end
+		end
+
+		if self._listeners["arrayChange"] then
+			for _, callback in ipairs(self._listeners["arrayChange"]) do
+				task.spawn(callback, path, "insert", index, value)
+			end
+		end
+		
+		self.Changed:Fire(path, self)
+	end
+
+	function Replica:_handleArrayRemove(path, index)
+		-- handles array remove from server
+		local array = getValueAtPath(self.Data, path)
+
+		if typeof(array) == "table" then
+			table.remove(array, index)
+
+			if self._signals[path] then
+				for _, callback in ipairs(self._signals[path]) do
+					task.spawn(callback, array)
+				end
+			end
+
+			if self._listeners["arrayChange"] then
+				for _, callback in ipairs(self._listeners["arrayChange"]) do
+					task.spawn(callback, path, "remove", index)
+				end
+			end
+		end
+		
+		self.Changed:Fire(path, self)
+	end
+
+	function Replica:_handleSetParent(parentId)
+		-- handles parent change from server
+		self._parentId = parentId
+
+		if self._listeners["parentChange"] then
+			for _, callback in ipairs(self._listeners["parentChange"]) do
+				task.spawn(callback, parentId)
 			end
 		end
 	end
-
-	-- clear pending children
-	self._pendingChildren[replicaId] = nil
-
-	-- fire deletion signal
-	self.ReplicaDestroyed:Fire(replica._token, replicaId)
 end
 
--- public methods
-function ReplicaController:GetReplicaById(replicaId)
-	return self._replicasById[replicaId]
-end
-
-function ReplicaController:GetReplicasWithTags(tags: {string}): {Replica}
-	if #tags == 0 then
-		return {}
-	end
-
-	local firstTag = tags[1]
-	local filteredReplicas = self._replicasByTag[firstTag] or {}
-	local result = {}
-
-	if #tags == 1 then
-		return filteredReplicas
-	end
-
-	for _, replica in filteredReplicas do
-		local hasAllTags = true
-		for i = 2, #tags do
-			if not replica:HasTag(tags[i]) then
-				hasAllTags = false
-				break
-			end
-		end
-		if hasAllTags then
-			table.insert(result, replica)
-		end
-	end
-
-	return result
-end
-
-function ReplicaController:WaitForReplicaWithTags(tags, timeout)
-	assert(type(tags) == "table" and #tags > 0, "Tags must be a non-empty array")
-	timeout = timeout or 10
-	local startTime = os.clock()
-
-	while os.clock() - startTime < timeout do
-		local replicas = self:GetReplicasWithTags(tags)
-		if #replicas > 0 then
-			return replicas[1]
-		end
-		task.wait(0.1)
-	end
-
-	return nil
-end
-
-function ReplicaController:FindFirstReplicaWithPredicate(predicate, timeout)
-	assert(typeof(predicate) == "function", "Predicate must be a function")
-	timeout = timeout or 10
-	local startTime = os.clock()
-
-	while os.clock() - startTime < timeout do
-		for _, replica in self._replicasById do
-			if predicate(replica) then
-				return replica
-			end
-		end
-		task.wait(0.1)
-	end
-
-	return nil
-end
-
-return ReplicaController
+return Replica
