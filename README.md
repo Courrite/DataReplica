@@ -26,14 +26,14 @@ ReplicaService:Initialize()
 
 -- Create a new replica
 local playerDataReplica = ReplicaService:CreateReplica(
-    { -- Initial data
+    Data = { -- Initial data
         gold = 100,
         level = 1,
         inventory = {
             items = {}
         }
     }
-    {"PlayerData", "Save"},   -- Tags for filtering
+    Tags ={"PlayerData", "Save"},   -- Tags for filtering
 )
 
 -- Subscribe a player to the replica
@@ -130,7 +130,7 @@ ReplicaController:Initialize()
 
 -- Query methods
 ReplicaController:GetReplicaById(replicaId)
-ReplicaController:GetReplicasWithTag(tag)
+ReplicaController:GetReplicasWithTags({tag})
 
 -- Utility methods
 ReplicaController:WaitForReplicaWithTag(tag, timeout)
