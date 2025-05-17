@@ -50,8 +50,8 @@ export type ReplicaController = {
 	Initialize: (self: ReplicaController) -> ReplicaController,
 
 	GetReplicaById: (self: ReplicaController, replicaId: string) -> Replica?,
-	GetReplicasWithTag: (self: ReplicaController, tag: string) -> {Replica},
-	WaitForReplicaWithTag: (self: ReplicaController, tag: string, timeout: number?) -> Replica?,
+	GetReplicasWithTags: (self: ReplicaService, tag: {string}) -> {Replica},
+	WaitForReplicaWithTags: (self: ReplicaController, tags: {string}, timeout: number?) -> Replica?,
 	FindFirstReplicaWithPredicate: (self: ReplicaController, predicate: (replica: Replica) -> boolean, timeout: number?) -> Replica?,
 	
 	_handleReplicaCreate: (self: ReplicaController, replicaId: string, tags: {string}, data: {[string]: any}, parentId: string?) -> (),
