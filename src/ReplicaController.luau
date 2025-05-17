@@ -235,17 +235,51 @@ function ReplicaController:GetReplicaById(replicaId)
 end
 
 -- Get all replicas with a specific tag
-function ReplicaController:GetReplicasWithTag(tag)
-	return self._replicasByTag[tag] or {}
+function ReplicaController:GetReplicasWithTags(tags: {string}): {Replica}
+	if #tags == 0 then
+		return {}
+	end
+
+	-- start with all replicas that have the first tag
+	local firstTag = tags[1]
+	local filteredReplicas = self._replicasByTag[firstTag] or {}
+	local result = {}
+
+	-- if only one tag was provided, return those replicas
+	if #tags == 1 then
+		return filteredReplicas
+	end
+
+	-- otherwise, filter for replicas that have ALL the requested tags
+	for _, replica in filteredReplicas do
+		local hasAllTags = true
+
+		-- check if replica has all the remaining tags
+		for i = 2, #tags do
+			local tag = tags[i]
+			if not replica:HasTag(tag) then
+				hasAllTags = false
+				break
+			end
+		end
+
+		if hasAllTags then
+			table.insert(result, replica)
+		end
+	end
+
+	return result
 end
 
 -- Utility functions for waiting for replicas
-function ReplicaController:WaitForReplicaWithTag(tag, timeout)
+function ReplicaController:WaitForReplicaWithTags(tags, timeout)
+	assert(type(tags) == "table" and #tags > 0, "Tags must be a non-empty array")
+
 	timeout = timeout or 10
 	local startTime = os.clock()
 
 	while os.clock() - startTime < timeout do
-		local replicas = self:GetReplicasWithTag(tag)
+		local replicas = self:GetReplicasWithTags(tags)
 		if #replicas > 0 then
 			return replicas[1]
 		end
