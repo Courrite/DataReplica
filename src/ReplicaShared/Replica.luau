@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local isServer = RunService:IsServer()
 
 local ReplicaService
+local Signal = require(script.Parent.Signal)
 
 local Replica = {}
 Replica.__index = Replica
@@ -21,16 +22,19 @@ function Replica.new(id: string, tags: {string}, dataTable: {[string]: any}, tok
 
 	self._id = id
 	self._tags = tags
-	self._data = dataTable
+	self.Data = dataTable
 	self._children = {}
 	self._parent = nil
 	self._parentId = nil
+	
+	self.Changed = Signal.new() -- path, replica
+	self.Destroyed = Signal.new() -- token, replicaId
 
 	if isServer then
 		self._token = token
 
 		if not ReplicaService then
-			ReplicaService = require(script.Parent.ReplicaService)
+			ReplicaService = require(script.Parent.Parent.ReplicaService)
 		end
 	end
 
@@ -52,11 +56,6 @@ function Replica:GetTags()
 	return self._tags
 end
 
-function Replica:GetData()
-	-- returns the replica's data table
-	return self._data
-end
-
 function Replica:GetParent()
 	-- returns the replica's parent replica
 	return self._parent
@@ -75,7 +74,7 @@ end
 local function deepCopy(original)
 	-- creates a deep copy of a table
 	local copy = {}
-	for k, v in pairs(original) do
+	for k, v in original do
 		if type(v) == "table" then
 			copy[k] = deepCopy(v)
 		else
@@ -132,7 +131,7 @@ if isServer then
 		-- sets a value at specified path and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
-		setValueAtPath(self._data, path, value)
+		setValueAtPath(self.Data, path, value)
 
 		ReplicaService:_replicaUpdateHandler(self._token, "update", path, value)
 
@@ -143,7 +142,7 @@ if isServer then
 		-- inserts a value into an array at specified path and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
-		local array = getValueAtPath(self._data, arrayPath)
+		local array = getValueAtPath(self.Data, arrayPath)
 		assert(typeof(array) == "table", "Path does not point to a table: " .. arrayPath)
 
 		if index then
@@ -162,7 +161,7 @@ if isServer then
 		-- removes a value from an array at specified path and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
-		local array = getValueAtPath(self._data, arrayPath)
+		local array = getValueAtPath(self.Data, arrayPath)
 		assert(typeof(array) == "table", "Path does not point to a table: " .. arrayPath)
 
 		local value = array[index]
@@ -215,53 +214,9 @@ if isServer then
 end
 
 if not isServer then
-	function Replica:ConnectOnChange(path, callback)
-		-- connects a callback to be called when the value at path changes
-		if not self._signals[path] then
-			self._signals[path] = {}
-		end
-
-		table.insert(self._signals[path], callback)
-
-		local connection = {
-			Disconnect = function()
-				for i, cb in ipairs(self._signals[path]) do
-					if cb == callback then
-						table.remove(self._signals[path], i)
-						break
-					end
-				end
-			end
-		}
-
-		return connection
-	end
-
-	function Replica:AddGlobalListener(listenerType, callback)
-		-- adds a global listener for specified type of changes
-		if not self._listeners[listenerType] then
-			self._listeners[listenerType] = {}
-		end
-
-		table.insert(self._listeners[listenerType], callback)
-
-		local connection = {
-			Disconnect = function()
-				for i, cb in ipairs(self._listeners[listenerType]) do
-					if cb == callback then
-						table.remove(self._listeners[listenerType], i)
-						break
-					end
-				end
-			end
-		}
-
-		return connection
-	end
-
 	function Replica:_handleDataUpdate(path, value)
 		-- handles data update from server
-		setValueAtPath(self._data, path, value)
+		setValueAtPath(self.Data, path, value)
 
 		local parts = string.split(path, ".")
 		local currentPath = ""
@@ -274,7 +229,7 @@ if not isServer then
 
 			if self._signals[currentPath] then
 				for _, callback in ipairs(self._signals[currentPath]) do
-					task.spawn(callback, getValueAtPath(self._data, currentPath))
+					task.spawn(callback, getValueAtPath(self.Data, currentPath))
 				end
 			end
 		end
@@ -284,15 +239,18 @@ if not isServer then
 				task.spawn(callback, path, value)
 			end
 		end
+		
+
+		self.Changed:Fire(path, self)
 	end
 
 	function Replica:_handleArrayInsert(path, index, value)
 		-- handles array insert from server
-		local array = getValueAtPath(self._data, path)
+		local array = getValueAtPath(self.Data, path)
 
 		if typeof(array) ~= "table" then
 			array = {}
-			setValueAtPath(self._data, path, array)
+			setValueAtPath(self.Data, path, array)
 		end
 
 		table.insert(array, index, value)
@@ -308,11 +266,13 @@ if not isServer then
 				task.spawn(callback, path, "insert", index, value)
 			end
 		end
+		
+		self.Changed:Fire(path[index], self)
 	end
 
 	function Replica:_handleArrayRemove(path, index)
 		-- handles array remove from server
-		local array = getValueAtPath(self._data, path)
+		local array = getValueAtPath(self.Data, path)
 
 		if typeof(array) == "table" then
 			table.remove(array, index)
@@ -329,6 +289,8 @@ if not isServer then
 				end
 			end
 		end
+		
+		self.Changed:Fire(path, self)
 	end
 
 	function Replica:_handleSetParent(parentId)
