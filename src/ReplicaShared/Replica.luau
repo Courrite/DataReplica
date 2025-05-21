@@ -9,7 +9,7 @@ local Replica = {}
 Replica.__index = Replica
 
 function Replica.new(id: string, tags: {string}, dataTable: {[string]: any}, token: any?)
-	-- creates a new replica instance with specified properties
+	-- Creates a new replica instance with specified properties
 	assert(typeof(id) == "string", "Replica ID must be a string")
 	assert(typeof(tags) == "table", "Replica tags must be a table")
 	assert(typeof(dataTable) == "table", "Replica data must be a table")
@@ -26,9 +26,9 @@ function Replica.new(id: string, tags: {string}, dataTable: {[string]: any}, tok
 	self._children = {}
 	self._parent = nil
 	self._parentId = nil
-	
-	self.Changed = Signal.new() -- path, replica
-	self.Destroyed = Signal.new() -- token, replicaId
+
+	self.Changed = Signal.new() -- Fires when data changes (path, replica)
+	self.Destroyed = Signal.new() -- Fires when replica is destroyed (token, replicaId)
 
 	if isServer then
 		self._token = token
@@ -39,40 +39,51 @@ function Replica.new(id: string, tags: {string}, dataTable: {[string]: any}, tok
 	end
 
 	if not isServer then
-		self._signals = {}
-		self._listeners = {}
+		self._signals = {} -- Path-based signals for specific data changes
+		self._listeners = {} -- Event listeners for specific actions
 	end
 
 	return self
 end
 
 function Replica:GetId()
-	-- returns the replica's unique id
+	-- Returns the replica's unique id
 	return self._id
 end
 
 function Replica:GetTags()
-	-- returns the replica's tags
+	-- Returns the replica's tags
 	return self._tags
 end
 
+function Replica:HasTag(tag)
+	-- Checks if the replica has a specific tag
+	for _, replicaTag in ipairs(self._tags) do
+		if replicaTag == tag then
+			return true
+		end
+	end
+	return false
+end
+
 function Replica:GetParent()
-	-- returns the replica's parent replica
+	-- Returns the replica's parent replica
 	return self._parent
 end
 
 function Replica:GetParentId()
-	-- returns the replica's parent id
+	-- Returns the replica's parent id
 	return self._parentId
 end
 
 function Replica:GetChildren()
-	-- returns the replica's children
+	-- Returns the replica's children
 	return self._children
 end
 
+-- Utility functions for data manipulation
 local function deepCopy(original)
-	-- creates a deep copy of a table
+	-- Creates a deep copy of a table
 	local copy = {}
 	for k, v in original do
 		if type(v) == "table" then
@@ -85,7 +96,7 @@ local function deepCopy(original)
 end
 
 local function getValueAtPath(tbl, path)
-	-- gets a value at specified path in a table
+	-- Gets a value at specified path in a table
 	local current = tbl
 	local pathParts = string.split(path, ".")
 
@@ -104,7 +115,7 @@ local function getValueAtPath(tbl, path)
 end
 
 local function setValueAtPath(tbl, path, value)
-	-- sets a value at specified path in a table
+	-- Sets a value at specified path in a table
 	local current = tbl
 	local pathParts = string.split(path, ".")
 
@@ -126,9 +137,10 @@ local function setValueAtPath(tbl, path, value)
 	return value
 end
 
+-- Server-side methods
 if isServer then
 	function Replica:SetValue(path, value)
-		-- sets a value at specified path and replicates to clients
+		-- Sets a value at specified path and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
 		setValueAtPath(self.Data, path, value)
@@ -139,14 +151,14 @@ if isServer then
 	end
 
 	function Replica:ArrayInsert(arrayPath, index, value)
-		-- inserts a value into an array at specified path and replicates to clients
+		-- Inserts a value into an array at specified path and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
 		local array = getValueAtPath(self.Data, arrayPath)
 		assert(typeof(array) == "table", "Path does not point to a table: " .. arrayPath)
 
 		if index then
-			table.insert(array, index, value)
+			array[index] = value
 		else
 			table.insert(array, value)
 			index = #array
@@ -158,7 +170,7 @@ if isServer then
 	end
 
 	function Replica:ArrayRemove(arrayPath, index)
-		-- removes a value from an array at specified path and replicates to clients
+		-- Removes a value from an array at specified path and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
 		local array = getValueAtPath(self.Data, arrayPath)
@@ -174,7 +186,7 @@ if isServer then
 	end
 
 	function Replica:SetParent(parentReplica)
-		-- sets the parent of this replica and replicates to clients
+		-- Sets the parent of this replica and replicates to clients
 		assert(self._token, "Replica token required for write operations")
 
 		if self._parent then
@@ -198,7 +210,7 @@ if isServer then
 	end
 
 	function Replica:Destroy()
-		-- destroys this replica and its children
+		-- Destroys this replica and its children
 		assert(self._token, "Replica token required for write operations")
 
 		if self._parent then
@@ -213,14 +225,16 @@ if isServer then
 	end
 end
 
+-- Client-side methods
 if not isServer then
 	function Replica:_handleDataUpdate(path, value)
-		-- handles data update from server
+		-- Handles data update from server
 		setValueAtPath(self.Data, path, value)
 
 		local parts = string.split(path, ".")
 		local currentPath = ""
 
+		-- Trigger signals for each path segment
 		for i, part in ipairs(parts) do
 			if i > 1 then
 				currentPath = currentPath .. "."
@@ -234,18 +248,19 @@ if not isServer then
 			end
 		end
 
+		-- Trigger general update listeners
 		if self._listeners["update"] then
 			for _, callback in ipairs(self._listeners["update"]) do
 				task.spawn(callback, path, value)
 			end
 		end
-		
 
+		-- Fire change signal
 		self.Changed:Fire(path, self)
 	end
 
 	function Replica:_handleArrayInsert(path, index, value)
-		-- handles array insert from server
+		-- Handles array insert from server
 		local array = getValueAtPath(self.Data, path)
 
 		if typeof(array) ~= "table" then
@@ -253,55 +268,84 @@ if not isServer then
 			setValueAtPath(self.Data, path, array)
 		end
 
-		table.insert(array, index, value)
+		if index then
+			array[index] = value
+		else
+			table.insert(array, value)
+		end
 
+		-- Trigger path-specific signals
 		if self._signals[path] then
 			for _, callback in ipairs(self._signals[path]) do
 				task.spawn(callback, array)
 			end
 		end
 
+		-- Trigger array change listeners
 		if self._listeners["arrayChange"] then
 			for _, callback in ipairs(self._listeners["arrayChange"]) do
 				task.spawn(callback, path, "insert", index, value)
 			end
 		end
-		
-		self.Changed:Fire(path[index], self)
+
+		-- Fire change signal
+		self.Changed:Fire(path, self)
 	end
 
 	function Replica:_handleArrayRemove(path, index)
-		-- handles array remove from server
+		-- Handles array remove from server
 		local array = getValueAtPath(self.Data, path)
 
 		if typeof(array) == "table" then
 			table.remove(array, index)
 
+			-- Trigger path-specific signals
 			if self._signals[path] then
 				for _, callback in ipairs(self._signals[path]) do
 					task.spawn(callback, array)
 				end
 			end
 
+			-- Trigger array change listeners
 			if self._listeners["arrayChange"] then
 				for _, callback in ipairs(self._listeners["arrayChange"]) do
 					task.spawn(callback, path, "remove", index)
 				end
 			end
 		end
-		
+
+		-- Fire change signal
 		self.Changed:Fire(path, self)
 	end
 
 	function Replica:_handleSetParent(parentId)
-		-- handles parent change from server
+		-- Handles parent change from server
 		self._parentId = parentId
 
+		-- Trigger parent change listeners
 		if self._listeners["parentChange"] then
 			for _, callback in ipairs(self._listeners["parentChange"]) do
 				task.spawn(callback, parentId)
 			end
 		end
+	end
+
+	function Replica:OnChange(path, callback)
+		-- Register a callback for when a specific path changes
+		if not self._signals[path] then
+			self._signals[path] = {}
+		end
+
+		table.insert(self._signals[path], callback)
+	end
+
+	function Replica:ListenForChanges(changeType, callback)
+		-- Register a callback for a specific change type (update, arrayChange, parentChange)
+		if not self._listeners[changeType] then
+			self._listeners[changeType] = {}
+		end
+
+		table.insert(self._listeners[changeType], callback)
 	end
 end
 
